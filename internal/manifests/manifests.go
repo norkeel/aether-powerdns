@@ -112,6 +112,12 @@ func labels(s *dnsv1alpha1.PowerDNSServer) map[string]string {
 // key rotation only requires a Secret update + pod restart.
 func PDNSConfig(s *dnsv1alpha1.PowerDNSServer) string {
 	api := apiSpecOrDefault(s)
+	// spec.disableAXFR defaults ON. Explicit false renders nothing, so
+	// PowerDNS' own default (AXFR from allow-axfr-ips only) applies.
+	disableAXFR := ""
+	if s.Spec.AXFRDisabled() {
+		disableAXFR = "disable-axfr=yes\n"
+	}
 	return fmt.Sprintf(`# managed by aether-powerdns
 launch=gpgsql
 local-address=0.0.0.0
@@ -129,7 +135,7 @@ api=yes
 # Zone-CR creations get an explicit SOA seeded by the operator anyway.
 default-soa-content=@ hostmaster.@ 0 10800 3600 604800 3600
 loglevel=4
-`, dnsTCPPort, api.Port) + renderExtraSettings(s.Spec.ExtraSettings)
+`, dnsTCPPort, api.Port) + disableAXFR + renderExtraSettings(s.Spec.ExtraSettings)
 }
 
 // reservedSettings are the pdns.conf settings the operator owns. A
@@ -147,6 +153,7 @@ var reservedSettings = map[string]struct{}{
 	"api":                  {},
 	"api-key":              {},
 	"default-soa-content":  {},
+	"disable-axfr":         {}, // spec.disableAXFR
 	// Process-model settings: daemon/guardian fork and let the container's
 	// PID 1 exit (CrashLoop), chroot/socket-dir move the control socket the
 	// `pdns_control rping` readiness probe talks to, and config-dir/
@@ -157,6 +164,37 @@ var reservedSettings = map[string]struct{}{
 	"socket-dir":  {},
 	"config-dir":  {},
 	"include-dir": {},
+}
+
+// axfrSettings are extraSettings that only make sense when the server
+// serves zone transfers: with spec.disableAXFR on (the default) PowerDNS
+// refuses every AXFR regardless of them. `master` is the legacy name of
+// `primary`.
+var axfrSettings = []string{"allow-axfr-ips", "master", "primary"}
+
+// AXFRSettingsIgnored returns the extraSettings keys that ask for zone
+// transfers while spec.disableAXFR refuses them all, sorted. Empty when
+// transfers are allowed or nothing asks for them. `primary`/`master` set
+// to a false value do not count.
+func AXFRSettingsIgnored(s *dnsv1alpha1.PowerDNSServer) []string {
+	if !s.Spec.AXFRDisabled() {
+		return nil
+	}
+	var keys []string
+	for _, k := range axfrSettings {
+		v, ok := s.Spec.ExtraSettings[k]
+		if !ok {
+			continue
+		}
+		if k != "allow-axfr-ips" {
+			switch strings.ToLower(strings.TrimSpace(v)) {
+			case "", "no", "false", "off", "0":
+				continue
+			}
+		}
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // reservedSettingPrefixes cover whole setting families. gpgsql-* (host,

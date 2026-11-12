@@ -11,6 +11,7 @@ non-obvious behaviour is called out here.
 | `replicas` | `1` | Reads/writes hit the same backend DB, so all replicas serve identical zones. Bump for HA, not throughput. |
 | `image` | `powerdns/pdns-auth-51` | Floating tag — pin a digest if you need reproducible rollouts. |
 | `resources` | requests `50m`/`128Mi`, limits `512Mi` | Standard `corev1.ResourceRequirements`. |
+| `disableAXFR` | `true` | Renders `disable-axfr=yes` so the server refuses all outgoing zone transfers. Set `false` for a hidden primary — see [`disableAXFR`](#disableaxfr--refuse-zone-transfers). |
 | `extraSettings` | _(none)_ | Arbitrary `pdns.conf` `key=value` settings appended after the managed block (hidden primary, tuning). Operator-owned keys are rejected — see [`extraSettings`](#extrasettings--arbitrary-pdnsconf-settings). |
 
 ## `backend`
@@ -210,6 +211,40 @@ Egress is intentionally not restricted — the pod must reach Postgres,
 which the operator can't enumerate generically. Keep disabled until you
 have confirmed every API consumer is in an allowlisted namespace.
 
+## `disableAXFR` — refuse zone transfers
+
+On by default: the operator renders `disable-axfr=yes`, so the server
+refuses every outgoing AXFR/IXFR, including from loopback. Zones
+replicate through the shared Postgres backend (`kind: Native`), so
+nothing outside the cluster needs to pull a full zone.
+
+To allow transfers (a `Zone` of `kind: Primary`, i.e. a hidden primary
+whose secondaries pull by AXFR), turn it off:
+
+```yaml
+disableAXFR: false
+extraSettings:
+  primary: "yes"
+  allow-axfr-ips: "192.0.2.10/32"
+```
+
+With `false` the operator renders nothing, so PowerDNS' own default
+applies: transfers only from `allow-axfr-ips`, which defaults to
+`127.0.0.0/8,::1`. Changing the field changes `pdns.conf` and rolls the
+pods. `disable-axfr` is reserved in `extraSettings`; use this field.
+
+**Upgrade note:** servers created before this field existed get
+`disable-axfr=yes` on the first reconcile after the operator upgrade,
+which rolls their pods once. A server that serves a `kind: Primary` zone
+must set `disableAXFR: false` before (or right after) the upgrade, or its
+secondaries stop receiving transfers. The Zone controller flags that case
+with a Warning event `AXFRDisabled` on the `kind: Primary` Zone (visible
+in `kubectl describe zone`); the zone itself keeps reconciling. The
+server also emits a Warning event `AXFRDisabled` (in `kubectl describe
+pdns`) whenever `extraSettings` sets `primary`/`master` or
+`allow-axfr-ips` while `disableAXFR` is true. That case also catches
+`kind: Native` zones with external secondaries.
+
 ## `extraSettings` — arbitrary pdns.conf settings
 
 Anything the CRD does not model can be written straight into `pdns.conf`.
@@ -218,6 +253,7 @@ per line, **sorted by key** so the rendered file (and therefore
 `status.configHash`) is byte-identical across reconciles.
 
 ```yaml
+disableAXFR: false   # a primary must allow transfers
 extraSettings:
   primary: "yes"
   allow-axfr-ips: "104.218.120.85/32"
@@ -244,7 +280,8 @@ operator `true` and the CRD rejects it as a non-string.
 
 `launch`, `local-address`, `local-port`, `webserver`, `webserver-address`,
 `webserver-port`, `webserver-allow-from`, `api`, `api-key`,
-`default-soa-content`, `daemon`, `guardian`, `chroot`, `socket-dir`,
+`default-soa-content`, `disable-axfr` (use `disableAXFR`), `daemon`,
+`guardian`, `chroot`, `socket-dir`,
 `config-dir`, `include-dir`, and every `gpgsql-*` and `tcp-control-*` key.
 
 Overriding those breaks the managed contract — backend wiring, API access,

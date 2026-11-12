@@ -231,3 +231,31 @@ func TestExtraSettingsEditRollsPods(t *testing.T) {
 		t.Errorf("steady-state reconcile must not move the config hash: %q -> %q", after, steady)
 	}
 }
+
+// A hidden primary that predates spec.disableAXFR silently stops serving
+// transfers on upgrade: the server must warn, without going terminal.
+func TestPhaseReadyWarnsOnAXFRSettingsWithDisableAXFR(t *testing.T) {
+	scheme := extraSettingsScheme(t)
+	s := extraSettingsServer(dnsv1alpha1.PhaseReady, map[string]string{
+		"primary":        "yes",
+		"allow-axfr-ips": "104.218.120.85/32",
+	})
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&dnsv1alpha1.PowerDNSServer{}).
+		WithObjects(s).Build()
+	rec := record.NewFakeRecorder(32)
+	r := &PowerDNSServerReconciler{Client: c, Scheme: scheme, Recorder: rec}
+	if _, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: extraSettingsKey}); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	found := false
+	for _, e := range drainEvents(rec) {
+		if strings.Contains(e, "AXFRDisabled") && strings.Contains(e, corev1.EventTypeWarning) &&
+			strings.Contains(e, "allow-axfr-ips") && strings.Contains(e, "primary") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected an AXFRDisabled Warning naming allow-axfr-ips and primary")
+	}
+}

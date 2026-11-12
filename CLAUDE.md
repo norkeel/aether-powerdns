@@ -226,6 +226,19 @@ DNS server's reconcile offline over a config typo). Keys are bounded to
 `^[a-z0-9][a-z0-9-]*$` and values may not contain newlines — both are
 pdns.conf injection guards, not cosmetics.
 
+`spec.disableAXFR` (*bool, nil = true, CRD `default: true`) renders
+`disable-axfr=yes` in the managed block unless explicitly false; false
+renders nothing (PowerDNS default AXFR ACL). Read it via
+`Spec.AXFRDisabled()`, never the raw pointer — Go-built objects skip
+apiserver defaulting. Default-on was the user's call (zone transfers off
+everywhere); it rolls every existing server once on upgrade and a hidden
+primary must set `false` — the Zone reconciler emits a Warning event
+`AXFRDisabled` on a Primary zone whose server refuses AXFR, and
+`phaseReady` emits the same reason on the server when extraSettings carries
+`primary`/`master`/`allow-axfr-ips` (`manifests.AXFRSettingsIgnored`).
+Events only, never NotReady/Failed: the zones are still served. `disable-axfr` is reserved in
+extraSettings.
+
 Guard is operator-side, NOT CEL: iterating an object of strings is where
 the CEL cost budget bites and it can't be verified locally. The CRD only
 carries `maxProperties`/`maxLength` bounds so such a rule stays

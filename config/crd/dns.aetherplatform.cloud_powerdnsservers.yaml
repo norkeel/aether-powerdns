@@ -236,11 +236,19 @@ spec:
                       type: integer
                       format: int32
                       minimum: 1
+                disableAXFR:
+                  type: boolean
+                  default: true
+                  description: >-
+                    Refuse every outgoing zone transfer (disable-axfr=yes).
+                    On by default. Set to false for PowerDNS' own default
+                    (AXFR only from allow-axfr-ips, loopback unless set),
+                    which Zones of kind Primary need.
                 # Arbitrary pdns.conf settings, appended sorted by key after
                 # the operator's managed block (hidden primary: primary=yes +
                 # allow-axfr-ips). Settings the operator owns (launch,
                 # local-address, local-port, webserver*, api, api-key,
-                # default-soa-content, daemon, guardian, chroot, socket-dir,
+                # default-soa-content, disable-axfr, daemon, guardian, chroot, socket-dir,
                 # config-dir, include-dir, gpgsql-*, tcp-control-*) are rejected
                 # by the operator, not by CEL: a rule
                 # iterating an object of strings is where the CEL cost budget
@@ -261,7 +269,7 @@ spec:
                     before their first '#'. Keys the operator owns (launch, local-address,
                     local-port, webserver, webserver-address, webserver-port,
                     webserver-allow-from, api, api-key, default-soa-content,
-                    daemon, guardian, chroot, socket-dir, config-dir,
+                    disable-axfr, daemon, guardian, chroot, socket-dir, config-dir,
                     include-dir, gpgsql-*, tcp-control-*) are rejected. Any
                     change re-renders pdns.conf
                     and rolls the pods.

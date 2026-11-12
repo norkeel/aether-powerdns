@@ -649,6 +649,16 @@ func (r *PowerDNSServerReconciler) phaseReady(ctx context.Context, s *dnsv1alpha
 		log.FromContext(ctx).Error(errors.New(msg), "invalid spec.extraSettings")
 		r.event(s, corev1.EventTypeWarning, "ExtraSettingsRejected", msg)
 	}
+	// spec.disableAXFR defaults ON and overrides every AXFR ACL, so a
+	// hidden primary (or a Native zone with external secondaries) that
+	// predates the field silently stops serving transfers. Warn on the
+	// server itself — the Zone-side AXFRDisabled event only covers
+	// kind: Primary zones.
+	if keys := manifests.AXFRSettingsIgnored(s); len(keys) > 0 {
+		r.event(s, corev1.EventTypeWarning, "AXFRDisabled",
+			"spec.disableAXFR is true (the default), so PowerDNS refuses every zone transfer and extraSettings "+
+				strings.Join(keys, ", ")+" have no effect; set disableAXFR: false to serve AXFR")
+	}
 	if err := r.reconcileDrift(ctx, s); err != nil {
 		return ctrl.Result{}, err
 	}
