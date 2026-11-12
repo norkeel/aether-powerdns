@@ -182,6 +182,7 @@ func TestValidateExtraSettingsRejectsReserved(t *testing.T) {
 		"api",
 		"api-key",
 		"default-soa-content",
+		"disable-axfr",
 		"gpgsql-host",
 		"gpgsql-password",
 		"daemon",

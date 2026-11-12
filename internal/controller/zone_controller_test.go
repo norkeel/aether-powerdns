@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -434,3 +436,46 @@ func TestZoneDefaultSOAWithoutNameserversUsesApex(t *testing.T) {
 		t.Errorf("SOA = %q, want apex-as-primary fallback %q", soa.Records[0].Content, want)
 	}
 }
+
+// A Primary zone on a server that refuses AXFR (the default) still
+// reconciles, but must warn: its secondaries can no longer pull it.
+func TestZonePrimaryWarnsWhenAXFRDisabled(t *testing.T) {
+	for name, tc := range map[string]struct {
+		kind    string
+		disable *bool
+		warn    bool
+	}{
+		"default": {dnsv1alpha1.ZoneKindPrimary, nil, true},
+		"false":   {dnsv1alpha1.ZoneKindPrimary, boolPtr(false), false},
+		"native":  {dnsv1alpha1.ZoneKindNative, nil, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFakePDNS(t)
+			server, secret := readyServer("pdns", "dns", f)
+			server.Spec.DisableAXFR = tc.disable
+			zone := basicZone("dns")
+			zone.Spec.Kind = tc.kind
+			r, c := newZoneReconciler(t, server, secret, zone)
+			rec := record.NewFakeRecorder(16)
+			r.Recorder = rec
+			key := types.NamespacedName{Name: "example-com", Namespace: "dns"}
+
+			reconcileZoneN(t, r, key, 3)
+
+			if z := getZone(t, c, key); z.Status.Phase != dnsv1alpha1.ZonePhaseReady {
+				t.Errorf("phase = %q, want Ready: the warning must not block the zone", z.Status.Phase)
+			}
+			warned := false
+			for _, e := range drainEvents(rec) {
+				if strings.Contains(e, "AXFRDisabled") {
+					warned = true
+				}
+			}
+			if warned != tc.warn {
+				t.Errorf("AXFRDisabled warning = %v, want %v", warned, tc.warn)
+			}
+		})
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }

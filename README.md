@@ -82,7 +82,7 @@ on the same Gateway. Independent of `dns.exposure`.
 `key=value` lines to `pdns.conf`, sorted by key, after the operator's
 managed block. Settings the operator owns (`launch`, `local-address`,
 `local-port`, `webserver*`, `api`, `api-key`, `default-soa-content`,
-`daemon`, `guardian`, `chroot`, `socket-dir`, `config-dir`, `include-dir`,
+`disable-axfr`, `daemon`, `guardian`, `chroot`, `socket-dir`, `config-dir`, `include-dir`,
 `gpgsql-*`, `tcp-control-*`) are rejected. Any change rolls the pods, because PowerDNS does not reload its
 config at runtime.
 
@@ -92,6 +92,7 @@ never queried directly.
 
 ```yaml
 spec:
+  disableAXFR: false                      # zone transfers are refused by default
   extraSettings:
     primary: "yes"                        # serve AXFR + send NOTIFY
     allow-axfr-ips: "104.218.120.85/32"   # the external secondary only

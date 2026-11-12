@@ -26,6 +26,7 @@ spec:
       storageSize: 5Gi
   dns:
     exposure: loadBalancer
+  disableAXFR: false   # transfers are refused by default; a primary needs them
   extraSettings:
     # Quote the values: unquoted `yes`/`true`/`5` parse as YAML bools and
     # numbers (Kubernetes uses YAML 1.1), and the CRD only accepts strings.

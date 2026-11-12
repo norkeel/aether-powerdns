@@ -89,6 +89,14 @@ func (r *ZoneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	if server.Status.Phase != dnsv1alpha1.PhaseReady {
 		return r.markNotReady(ctx, zone, "ServerNotReady", "PowerDNSServer is not Ready yet", requeueShort)
 	}
+	// spec.disableAXFR defaults ON, which silently starves a Primary
+	// zone's secondaries. Not fatal (the zone itself is still served and
+	// reconciled), so surface it as a Warning event rather than NotReady.
+	if zone.Spec.Kind == dnsv1alpha1.ZoneKindPrimary && server.Spec.AXFRDisabled() {
+		r.event(zone, corev1.EventTypeWarning, "AXFRDisabled",
+			fmt.Sprintf("PowerDNSServer %s/%s refuses zone transfers (spec.disableAXFR is true, the default); set disableAXFR: false so secondaries can pull this Primary zone",
+				server.Namespace, server.Name))
+	}
 
 	pc, err := pdnsClientFor(ctx, r.Client, server)
 	if err != nil {

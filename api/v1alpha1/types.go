@@ -134,6 +134,17 @@ type PowerDNSServerSpec struct {
 	// +optional
 	PodDisruptionBudget *PDBSpec `json:"podDisruptionBudget,omitempty"`
 
+	// DisableAXFR makes the server refuse every outgoing zone transfer
+	// (`disable-axfr=yes`), including from loopback. ON by default (nil =
+	// true): zones replicate through the shared Postgres backend (Native
+	// zones), not by AXFR. Set it to false to get PowerDNS' own default
+	// back (AXFR only from allow-axfr-ips, 127.0.0.0/8 and ::1 unless
+	// set), which a Zone of kind Primary needs. `disable-axfr` is
+	// therefore a reserved key in extraSettings.
+	// +optional
+	// +kubebuilder:default=true
+	DisableAXFR *bool `json:"disableAXFR,omitempty"`
+
 	// ExtraSettings are arbitrary pdns.conf settings appended verbatim
 	// (`key=value`, one per line, sorted by key) after the operator's
 	// managed block. Use it for anything the CRD does not model — most
@@ -141,6 +152,7 @@ type PowerDNSServerSpec struct {
 	// pulls the zone by AXFR while the registrar's NS records never
 	// point at this server:
 	//
+	//	disableAXFR: false                      # default true refuses AXFR
 	//	extraSettings:
 	//	  primary: "yes"                        # enable AXFR + NOTIFY
 	//	  allow-axfr-ips: "104.218.120.85/32"   # the external secondary
@@ -152,7 +164,7 @@ type PowerDNSServerSpec struct {
 	// GUARD: settings the operator owns are REJECTED, not merged —
 	// launch, local-address, local-port, webserver, webserver-address,
 	// webserver-port, webserver-allow-from, api, api-key,
-	// default-soa-content, daemon, guardian, chroot, socket-dir,
+	// default-soa-content, disable-axfr, daemon, guardian, chroot, socket-dir,
 	// config-dir, include-dir and every gpgsql-* / tcp-control-* key.
 	// Overriding those silently breaks the managed contract (backend
 	// wiring, API access, probes), so the spec is failed instead. Keys must match
@@ -541,4 +553,11 @@ type PowerDNSServerStatus struct {
 	// FailureMessage details the cause when Phase is `Failed`.
 	// +optional
 	FailureMessage string `json:"failureMessage,omitempty"`
+}
+
+// AXFRDisabled reports the effective spec.disableAXFR: true unless it is
+// explicitly set to false. The CRD also defaults it to true, but objects
+// built in Go (tests, fake clients) never pass through apiserver defaulting.
+func (s *PowerDNSServerSpec) AXFRDisabled() bool {
+	return s.DisableAXFR == nil || *s.DisableAXFR
 }
