@@ -339,6 +339,7 @@ spec:
                                           # Service is unreachable for it.
                                           # Gateway TCPRoute exposure works
                                           # too; ClusterIP does not.
+  disableAXFR: false                      # transfers are refused by default
   extraSettings:
     primary: "yes"                        # serve AXFR + send NOTIFY
     allow-axfr-ips: "104.218.120.85/32"   # ONLY the external secondary
@@ -364,6 +365,9 @@ spec:
   named in the zone's NS RRset even though the primary is not. A
   secondary that is deliberately absent from the NS RRset gets nothing —
   add `also-notify: "<ip>"` to `extraSettings` for that case.
+- `disableAXFR: false` is required: the default (`true`) renders
+  `disable-axfr=yes`, which refuses every transfer whatever
+  `allow-axfr-ips` says.
 - `allow-axfr-ips` is the ACL for **unsigned** AXFR: it defaults to
   loopback only, so without it an external secondary is refused, and
   widened to `0.0.0.0/0` it hands the entire zone to anyone who asks.
