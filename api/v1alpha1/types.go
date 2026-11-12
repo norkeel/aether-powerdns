@@ -152,11 +152,14 @@ type PowerDNSServerSpec struct {
 	// GUARD: settings the operator owns are REJECTED, not merged —
 	// launch, local-address, local-port, webserver, webserver-address,
 	// webserver-port, webserver-allow-from, api, api-key,
-	// default-soa-content and every gpgsql-* key. Overriding those
-	// silently breaks the managed contract (backend wiring, API access,
-	// probes), so the spec is failed instead. Keys must match
-	// `^[a-z0-9][a-z0-9-]*$` and values may not contain newlines —
-	// a newline would inject additional settings into pdns.conf.
+	// default-soa-content, daemon, guardian, chroot, socket-dir,
+	// config-dir, include-dir and every gpgsql-* / tcp-control-* key.
+	// Overriding those silently breaks the managed contract (backend
+	// wiring, API access, probes), so the spec is failed instead. Keys must match
+	// `^[a-z0-9][a-z0-9-]*$`; values may not contain newlines (they
+	// would inject additional settings into pdns.conf), end with a
+	// backslash (line continuation), contain `+=` (append syntax) or
+	// have whitespace before their first `#` (inline comment).
 	//
 	// Every change re-renders pdns.conf, which moves status.configHash
 	// and rolls the pods (PowerDNS does not reload at runtime). An

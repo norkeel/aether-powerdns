@@ -184,6 +184,15 @@ func TestValidateExtraSettingsRejectsReserved(t *testing.T) {
 		"default-soa-content",
 		"gpgsql-host",
 		"gpgsql-password",
+		"daemon",
+		"guardian",
+		"chroot",
+		"socket-dir",
+		"config-dir",
+		"include-dir",
+		"tcp-control-address",
+		"tcp-control-port",
+		"tcp-control-secret",
 	}
 	for _, key := range reserved {
 		t.Run(key, func(t *testing.T) {
@@ -239,6 +248,33 @@ func TestValidateExtraSettingsRejectsMalformed(t *testing.T) {
 				t.Errorf("rejection should cite the newline, got %q", msgs[0])
 			}
 		})
+	}
+
+	// pdns.conf parser quirks: a trailing backslash glues the next line onto
+	// the value, and whitespace + '#' starts a comment that truncates it.
+	for name, value := range map[string]string{
+		"trailing-backslash":       `10.0.0.1\`,
+		"trailing-backslash-space": "10.0.0.1\\ ",
+		"inline-comment":           "10.0.0.1 #note",
+		"inline-comment-tab":       "10.0.0.1\t#note",
+		"trailing-backslash-vtab":  "10.0.0.1\\\v",
+		"trailing-backslash-ff":    "10.0.0.1\\\f",
+		"inline-comment-vtab":      "10.0.0.1\v#note",
+		"inline-comment-ff":        "10.0.0.1\f#note",
+		"append-syntax":            "10.0.0.1+=10.0.0.2",
+	} {
+		t.Run("value/"+name, func(t *testing.T) {
+			if msgs := ValidateExtraSettings(map[string]string{"allow-axfr-ips": value}); len(msgs) != 1 {
+				t.Fatalf("expected exactly 1 rejection for value %q, got %d: %v", value, len(msgs), msgs)
+			}
+		})
+	}
+	// A '#' NOT preceded by whitespace is literal to pdns and must pass.
+	// pdns only inspects the FIRST '#', so a later " #" is literal too.
+	for _, value := range []string{"a#b", "a#b #c", "#leading"} {
+		if msgs := ValidateExtraSettings(map[string]string{"webserver-password": value}); len(msgs) != 0 {
+			t.Errorf("value %q is not a pdns comment and must be allowed, got %v", value, msgs)
+		}
 	}
 
 	// Several rejections at once must come back sorted by key — the message

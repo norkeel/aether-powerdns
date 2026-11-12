@@ -27,8 +27,8 @@ spec:
   dns:
     exposure: loadBalancer
   extraSettings:
-    # Quote the values: unquoted `yes` is a YAML string, but unquoted
-    # `true`/`5` are not, and the CRD only accepts strings.
+    # Quote the values: unquoted `yes`/`true`/`5` parse as YAML bools and
+    # numbers (Kubernetes uses YAML 1.1), and the CRD only accepts strings.
     primary: "yes"                        # bump SOA serial, serve AXFR, send NOTIFY
     allow-axfr-ips: "104.218.120.85/32"   # ONLY the external secondary
     # also-notify: "104.218.120.85"       # needed ONLY if the secondary is

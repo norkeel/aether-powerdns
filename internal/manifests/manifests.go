@@ -87,12 +87,7 @@ func ConfigHash(conf string, secrets ...map[string][]byte) string {
 	for _, s := range secrets {
 		// Stable ordering — Secret data is a map; iterating directly
 		// would produce a different hash on every reconcile.
-		keys := make([]string, 0, len(s))
-		for k := range s {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
+		for _, k := range sortedKeys(s) {
 			h.Write([]byte(k))
 			h.Write([]byte{0})
 			h.Write(s[k])
@@ -152,18 +147,57 @@ var reservedSettings = map[string]struct{}{
 	"api":                  {},
 	"api-key":              {},
 	"default-soa-content":  {},
+	// Process-model settings: daemon/guardian fork and let the container's
+	// PID 1 exit (CrashLoop), chroot/socket-dir move the control socket the
+	// `pdns_control rping` readiness probe talks to, and config-dir/
+	// include-dir would pull in config files the guard never sees.
+	"daemon":      {},
+	"guardian":    {},
+	"chroot":      {},
+	"socket-dir":  {},
+	"config-dir":  {},
+	"include-dir": {},
 }
 
-// reservedSettingPrefix covers the whole gpgsql-* family (gpgsql-host,
-// gpgsql-password, …) — those are fed from the normalized backend Secret
-// via PDNS_* env vars, so a file-level override would point PowerDNS at a
-// different database than the schema-init Job configured.
-const reservedSettingPrefix = "gpgsql-"
+// reservedSettingPrefixes cover whole setting families. gpgsql-* (host,
+// password, …) is fed from the normalized backend Secret via PDNS_* env
+// vars, so a file-level override would point PowerDNS at a different
+// database than the schema-init Job configured. tcp-control-* would open
+// the control channel (the same one `pdns_control` and the readiness probe
+// use via socket-dir) on a TCP port.
+var reservedSettingPrefixes = []string{"gpgsql-", "tcp-control-"}
+
+func isReservedSetting(key string) bool {
+	if _, ok := reservedSettings[key]; ok {
+		return true
+	}
+	for _, p := range reservedSettingPrefixes {
+		if strings.HasPrefix(key, p) {
+			return true
+		}
+	}
+	return false
+}
 
 // extraSettingKeyPattern bounds what may appear left of the `=`. PowerDNS
 // setting names are lowercase-with-dashes; anything else (whitespace, `=`,
 // a newline) would let a key smuggle extra config lines into pdns.conf.
 var extraSettingKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
+// pdnsSpace is the C-locale isspace set PowerDNS' parser trims and treats as
+// whitespace (boost::trim_right and std::isspace in ArgvMap::file). Go's
+// `\s` omits \v, so it is spelled out instead.
+const pdnsSpace = " \t\n\v\f\r"
+
+// startsPdnsComment reports whether PowerDNS would cut value at an inline
+// comment. Its parser looks at the FIRST `#` on the line only and treats it
+// as a comment when whitespace precedes it; later `#`s stay literal. Keys
+// can't contain `#` and the line is `key=value`, so the first `#` on the
+// line is the first `#` in value, and it is never at line position 0.
+func startsPdnsComment(value string) bool {
+	i := strings.IndexByte(value, '#')
+	return i > 0 && strings.IndexByte(pdnsSpace, value[i-1]) >= 0
+}
 
 // ValidateExtraSettings returns one message per rejected spec.extraSettings
 // entry, sorted by key. An empty result means every entry is safe to render.
@@ -190,11 +224,27 @@ func extraSettingViolation(key, value string) string {
 	if !extraSettingKeyPattern.MatchString(key) {
 		return fmt.Sprintf("key %q must match %s", key, extraSettingKeyPattern.String())
 	}
-	if _, reserved := reservedSettings[key]; reserved || strings.HasPrefix(key, reservedSettingPrefix) {
+	if isReservedSetting(key) {
 		return fmt.Sprintf("key %q is managed by the operator and cannot be overridden", key)
 	}
 	if strings.ContainsAny(value, "\r\n") {
 		return fmt.Sprintf("value of %q must not contain newlines", key)
+	}
+	// PowerDNS' config parser (ArgvMap::file) right-trims each line and
+	// treats a trailing `\` as a line continuation — the NEXT sorted entry
+	// would be glued onto this value — and cuts everything from the first
+	// `#` if whitespace precedes it, silently truncating the value.
+	if strings.HasSuffix(strings.TrimRight(value, pdnsSpace), `\`) {
+		return fmt.Sprintf("value of %q must not end with a backslash (pdns.conf line continuation)", key)
+	}
+	// The parser splits the line on the FIRST `+=` before it looks for `=`,
+	// so `key=a+=b` becomes an append to a setting literally named "key=a"
+	// and the intended setting is silently lost.
+	if strings.Contains(value, "+=") {
+		return fmt.Sprintf("value of %q must not contain '+=' (pdns.conf append syntax)", key)
+	}
+	if startsPdnsComment(value) {
+		return fmt.Sprintf("value of %q must not have whitespace before its first '#' (pdns.conf comment)", key)
 	}
 	return ""
 }
@@ -225,7 +275,7 @@ func renderExtraSettings(extra map[string]string) string {
 	return b.String()
 }
 
-func sortedKeys(m map[string]string) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
