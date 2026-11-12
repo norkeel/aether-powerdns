@@ -87,12 +87,7 @@ func ConfigHash(conf string, secrets ...map[string][]byte) string {
 	for _, s := range secrets {
 		// Stable ordering — Secret data is a map; iterating directly
 		// would produce a different hash on every reconcile.
-		keys := make([]string, 0, len(s))
-		for k := range s {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
+		for _, k := range sortedKeys(s) {
 			h.Write([]byte(k))
 			h.Write([]byte{0})
 			h.Write(s[k])
@@ -152,6 +147,16 @@ var reservedSettings = map[string]struct{}{
 	"api":                  {},
 	"api-key":              {},
 	"default-soa-content":  {},
+	// Process-model settings: daemon/guardian fork and let the container's
+	// PID 1 exit (CrashLoop), chroot/socket-dir move the control socket the
+	// `pdns_control rping` readiness probe talks to, and config-dir/
+	// include-dir would pull in config files the guard never sees.
+	"daemon":      {},
+	"guardian":    {},
+	"chroot":      {},
+	"socket-dir":  {},
+	"config-dir":  {},
+	"include-dir": {},
 }
 
 // reservedSettingPrefix covers the whole gpgsql-* family (gpgsql-host,
@@ -164,6 +169,15 @@ const reservedSettingPrefix = "gpgsql-"
 // setting names are lowercase-with-dashes; anything else (whitespace, `=`,
 // a newline) would let a key smuggle extra config lines into pdns.conf.
 var extraSettingKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
+
+// pdnsSpace is the C-locale isspace set PowerDNS' parser trims and treats as
+// whitespace (boost::trim_right and std::isspace in ArgvMap::file). Go's
+// `\s` omits \v, so it is spelled out instead.
+const pdnsSpace = " \t\n\v\f\r"
+
+// extraSettingCommentPattern matches the start of an inline pdns.conf
+// comment: a `#` preceded by pdns whitespace.
+var extraSettingCommentPattern = regexp.MustCompile("[" + pdnsSpace + "]#")
 
 // ValidateExtraSettings returns one message per rejected spec.extraSettings
 // entry, sorted by key. An empty result means every entry is safe to render.
@@ -196,6 +210,16 @@ func extraSettingViolation(key, value string) string {
 	if strings.ContainsAny(value, "\r\n") {
 		return fmt.Sprintf("value of %q must not contain newlines", key)
 	}
+	// PowerDNS' config parser (ArgvMap::file) right-trims each line and
+	// treats a trailing `\` as a line continuation — the NEXT sorted entry
+	// would be glued onto this value — and cuts everything from a `#`
+	// preceded by whitespace as a comment, silently truncating the value.
+	if strings.HasSuffix(strings.TrimRight(value, pdnsSpace), `\`) {
+		return fmt.Sprintf("value of %q must not end with a backslash (pdns.conf line continuation)", key)
+	}
+	if extraSettingCommentPattern.MatchString(value) {
+		return fmt.Sprintf("value of %q must not contain whitespace followed by '#' (pdns.conf comment)", key)
+	}
 	return ""
 }
 
@@ -225,7 +249,7 @@ func renderExtraSettings(extra map[string]string) string {
 	return b.String()
 }
 
-func sortedKeys(m map[string]string) []string {
+func sortedKeys[V any](m map[string]V) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

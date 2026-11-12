@@ -80,9 +80,10 @@ on the same Gateway. Independent of `dns.exposure`.
 
 `spec.extraSettings` (map of string → string) appends arbitrary
 `key=value` lines to `pdns.conf`, sorted by key, after the operator's
-managed block. Settings the operator owns (`launch`, `local-*`,
-`webserver*`, `api`, `api-key`, `default-soa-content`, `gpgsql-*`) are
-rejected. Any change rolls the pods, because PowerDNS does not reload its
+managed block. Settings the operator owns (`launch`, `local-address`,
+`local-port`, `webserver*`, `api`, `api-key`, `default-soa-content`,
+`daemon`, `guardian`, `chroot`, `socket-dir`, `config-dir`, `include-dir`,
+`gpgsql-*`) are rejected. Any change rolls the pods, because PowerDNS does not reload its
 config at runtime.
 
 The main use is a **hidden primary**: an external nameserver holds the

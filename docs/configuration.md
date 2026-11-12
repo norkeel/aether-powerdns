@@ -244,11 +244,15 @@ operator `true` and the CRD rejects it as a non-string.
 
 `launch`, `local-address`, `local-port`, `webserver`, `webserver-address`,
 `webserver-port`, `webserver-allow-from`, `api`, `api-key`,
-`default-soa-content`, and every `gpgsql-*` key.
+`default-soa-content`, `daemon`, `guardian`, `chroot`, `socket-dir`,
+`config-dir`, `include-dir`, and every `gpgsql-*` key.
 
 Overriding those breaks the managed contract — backend wiring, API access,
-the readiness probe. Keys must also match `^[a-z0-9][a-z0-9-]*$` and values
-may not contain newlines (a newline would inject further settings).
+the readiness probe, the container's PID 1. Keys must also match
+`^[a-z0-9][a-z0-9-]*$`, and values may not contain newlines (a newline
+would inject further settings), end with a backslash (pdns.conf line
+continuation would swallow the next entry) or contain whitespace followed
+by `#` (pdns.conf treats it as a comment and truncates the value).
 
 A rejected entry on a **new** server fails the spec: `phase=Failed`,
 `status.failureMessage: invalid extraSettings: …`. On a server that is
