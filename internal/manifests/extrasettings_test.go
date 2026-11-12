@@ -190,6 +190,9 @@ func TestValidateExtraSettingsRejectsReserved(t *testing.T) {
 		"socket-dir",
 		"config-dir",
 		"include-dir",
+		"tcp-control-address",
+		"tcp-control-port",
+		"tcp-control-secret",
 	}
 	for _, key := range reserved {
 		t.Run(key, func(t *testing.T) {
@@ -258,6 +261,7 @@ func TestValidateExtraSettingsRejectsMalformed(t *testing.T) {
 		"trailing-backslash-ff":    "10.0.0.1\\\f",
 		"inline-comment-vtab":      "10.0.0.1\v#note",
 		"inline-comment-ff":        "10.0.0.1\f#note",
+		"append-syntax":            "10.0.0.1+=10.0.0.2",
 	} {
 		t.Run("value/"+name, func(t *testing.T) {
 			if msgs := ValidateExtraSettings(map[string]string{"allow-axfr-ips": value}); len(msgs) != 1 {
@@ -266,8 +270,11 @@ func TestValidateExtraSettingsRejectsMalformed(t *testing.T) {
 		})
 	}
 	// A '#' NOT preceded by whitespace is literal to pdns and must pass.
-	if msgs := ValidateExtraSettings(map[string]string{"webserver-password": "a#b"}); len(msgs) != 0 {
-		t.Errorf("a '#' without leading whitespace must be allowed, got %v", msgs)
+	// pdns only inspects the FIRST '#', so a later " #" is literal too.
+	for _, value := range []string{"a#b", "a#b #c", "#leading"} {
+		if msgs := ValidateExtraSettings(map[string]string{"webserver-password": value}); len(msgs) != 0 {
+			t.Errorf("value %q is not a pdns comment and must be allowed, got %v", value, msgs)
+		}
 	}
 
 	// Several rejections at once must come back sorted by key — the message

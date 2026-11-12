@@ -83,7 +83,7 @@ on the same Gateway. Independent of `dns.exposure`.
 managed block. Settings the operator owns (`launch`, `local-address`,
 `local-port`, `webserver*`, `api`, `api-key`, `default-soa-content`,
 `daemon`, `guardian`, `chroot`, `socket-dir`, `config-dir`, `include-dir`,
-`gpgsql-*`) are rejected. Any change rolls the pods, because PowerDNS does not reload its
+`gpgsql-*`, `tcp-control-*`) are rejected. Any change rolls the pods, because PowerDNS does not reload its
 config at runtime.
 
 The main use is a **hidden primary**: an external nameserver holds the
