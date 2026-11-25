@@ -12,7 +12,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o /bin/aether-powerdns ./cmd/operator
 
 FROM alpine:3.23
-RUN apk add --no-cache ca-certificates tzdata && \
+RUN apk upgrade --no-cache && apk add --no-cache ca-certificates tzdata && \
     addgroup -S aether && adduser -S aether -G aether
 COPY --from=builder /bin/aether-powerdns /bin/aether-powerdns
 
